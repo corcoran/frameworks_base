@@ -4450,6 +4450,13 @@ public final class Settings {
         public static final String STATUSBAR_TOGGLES_BRIGHTNESS_LOC = "statusbar_toggles_brightness_loc";
 
         /**
+         * Whether to enable torch by long pressing power from a screen-off state
+         *
+         * @hide
+         */
+        public static final String ENABLE_QUICK_TORCH = "enable_quick_torch";
+
+        /**
          * toggle to "fix" the following: (found in NotificationManagerService)
          *  new in 4.2: if there was supposed to be a sound and we're in vibrate mode,
          *  we always vibrate, even if no vibration was specified

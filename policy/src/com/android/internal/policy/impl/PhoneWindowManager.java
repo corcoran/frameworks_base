@@ -593,6 +593,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     PowerManager.WakeLock mBroadcastWakeLock;
     boolean mHavePendingMediaKeyRepeatWithWakeLock;
 
+    public static final String INTENT_TORCH_ON = "net.cactii.flash2.FLASHLIGHT_ON";
+    public static final String INTENT_TORCH_OFF = "net.cactii.flash2.FLASHLIGHT_OFF";
+    boolean mEnableQuickTorch;
+    boolean mQuickTorchWakeKey;
+
     // Fallback actions by key code.
     private final SparseArray<KeyCharacterMap.FallbackAction> mFallbackActions =
             new SparseArray<KeyCharacterMap.FallbackAction>();
@@ -731,6 +736,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     Settings.System.HIDE_STATUSBAR), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.TOGGLE_NOTIFICATION_AND_QS_SHADE), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.ENABLE_QUICK_TORCH), false, this);
             updateSettings();
         }
 
@@ -739,7 +746,34 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             updateRotation(false);
         }
     }
-    
+
+    Runnable mTorchOn = new Runnable() {
+        public void run() {
+            boolean bright = Settings.System.getInt(mContext.getContentResolver(),
+                    Settings.System.EXPANDED_FLASH_MODE, 0) == 1;
+            Intent i = new Intent(INTENT_TORCH_ON);
+            i.putExtra("bright", bright);
+            mContext.sendBroadcast(i);
+        };
+    };
+
+    Runnable mTorchOff = new Runnable() {
+        public void run() {
+            Intent i = new Intent(INTENT_TORCH_OFF);
+            mContext.sendBroadcast(i);
+        };
+    };
+
+    void handleChangeTorchState(boolean toggle) {
+        if (toggle) {
+            mHandler.postDelayed(mTorchOn, ViewConfiguration.getLongPressTimeout());
+        } else {
+            mHandler.removeCallbacks(mTorchOn);
+            mHandler.post(mTorchOff);
+        }
+    }
+
+
     class MyOrientationListener extends WindowOrientationListener {
         MyOrientationListener(Context context) {
             super(context);
@@ -1656,6 +1690,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     Settings.System.TRACKBALL_WAKE_SCREEN, 1, UserHandle.USER_CURRENT) == 1);
             mTrackballUnlockScreen = (Settings.System.getIntForUser(resolver,
                     Settings.System.TRACKBALL_UNLOCK_SCREEN, 0, UserHandle.USER_CURRENT) == 1);
+
+            mEnableQuickTorch = (Settings.System.getInt(resolver,
+                    Settings.System.ENABLE_QUICK_TORCH, 0) == 1);
 
             // Configure rotation lock.
             int userRotation = Settings.System.getIntForUser(resolver,
@@ -4282,6 +4319,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
             }
         }
+        mQuickTorchWakeKey = true;
 
         // Handle special keys.
         switch (keyCode) {
@@ -4405,6 +4443,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     break;
                 } else if (keyguardActive) {
                     keyCode = KeyEvent.KEYCODE_POWER;
+                    mQuickTorchWakeKey = false;
                     mKeyguardMediator.onWakeKeyWhenKeyguardShowingTq(keyCode);
                 } else {
                     result |= ACTION_WAKE_UP;
@@ -4419,6 +4458,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
                 result &= ~ACTION_PASS_TO_USER;
                 if (down) {
+                    if (!isScreenOn && mEnableQuickTorch && mQuickTorchWakeKey)
+                        handleChangeTorchState(true);
                     if (isScreenOn && !mPowerKeyTriggered
                             && (event.getFlags() & KeyEvent.FLAG_FALLBACK) == 0) {
                         mPowerKeyTriggered = true;
@@ -4448,6 +4489,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     interceptPowerKeyDown(!isScreenOn || hungUp
                             || mVolumeDownKeyTriggered || mVolumeUpKeyTriggered);
                 } else {
+                    if (mQuickTorchWakeKey)
+                        handleChangeTorchState(false);
+
                     mPowerKeyTriggered = false;
                     cancelPendingScreenshotChordAction();
                     if (interceptPowerKeyUp(canceled || mPendingPowerKeyUpCanceled)) {
