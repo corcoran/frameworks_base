@@ -74,13 +74,6 @@ public abstract class BaseKeyListener extends MetaKeyKeyListener
             return true;
         }
 
-        // Alt+Backspace or Alt+ForwardDelete deletes the current line, if possible.
-        if (event.isAltPressed() || getMetaState(content, META_ALT_ON) == 1) {
-            if (deleteLine(view, content)) {
-                return true;
-            }
-        }
-
         // Delete a character.
         final int start = Selection.getSelectionEnd(content);
         final int end;
@@ -147,12 +140,36 @@ public abstract class BaseKeyListener extends MetaKeyKeyListener
         return contentType;
     }
 
+    public boolean onKeyUp(View view, Editable content,
+                            int keyCode, KeyEvent event) {
+        boolean handled;
+        if (keyCode == KeyEvent.KEYCODE_DEL && (event.isAltPressed() || getMetaState(content, META_ALT_ON) == 1) && !event.isCanceled()) {
+            handled = backspace(view, content, keyCode, event);
+
+            if (handled) {
+                adjustMetaAfterKeypress(content);
+            }
+        }
+
+        return super.onKeyUp(view, content, keyCode, event);
+    }
+
     public boolean onKeyDown(View view, Editable content,
                              int keyCode, KeyEvent event) {
         boolean handled;
         switch (keyCode) {
             case KeyEvent.KEYCODE_DEL:
-                handled = backspace(view, content, keyCode, event);
+                if (event.isAltPressed() || getMetaState(content, META_ALT_ON) == 1) {
+                    if (event.getRepeatCount() > 0 && (event.getFlags() & KeyEvent.FLAG_LONG_PRESS) != 0) {
+                        if (deleteLine(view, content)) {
+                            handled = true;
+                            break;
+                        }
+                    }
+                    handled = false;
+                } else {
+                    handled = backspace(view, content, keyCode, event);
+                }
                 break;
             case KeyEvent.KEYCODE_FORWARD_DEL:
                 handled = forwardDelete(view, content, keyCode, event);
