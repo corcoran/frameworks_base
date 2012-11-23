@@ -17,6 +17,7 @@
 package android.widget;
 
 import com.android.internal.R;
+import com.android.internal.util.XmlUtils;
 
 import android.app.AlertDialog;
 import android.content.Context;
@@ -38,6 +39,7 @@ import android.view.ViewGroup;
 
 import java.text.Collator;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -45,6 +47,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import java.io.IOException;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
 
 /**
  * This class contains the SecurityPermissions view implementation.
@@ -57,7 +63,7 @@ import java.util.Set;
  * 
  * {@hide}
  */
-public class AppSecurityPermissions {
+public class AppSecurityPermissions extends AppSecurityPermissionsBase {
 
     public static final int WHICH_PERSONAL = 1<<0;
     public static final int WHICH_DEVICE = 1<<1;
@@ -131,7 +137,7 @@ public class AppSecurityPermissions {
          * True if this should be considered a new permission.
          */
         boolean mNew;
-
+        
         MyPermissionInfo() {
         }
 
@@ -151,24 +157,181 @@ public class AppSecurityPermissions {
         MyPermissionGroupInfo mGroup;
         MyPermissionInfo mPerm;
         AlertDialog mDialog;
+        PackageManager mPm;
 
+        private final static String TAG = "PermissionItemView";
+
+        private HashSet<String> mSpoofedPerms;
+        private HashSet<String> mSpoofablePerms;
+        private HashSet<String> mRevokedPerms;
+        private HashSet<String> mRevokeablePerms;
+                
+        private EditableChangeListener mEditableChangeListener = new EditableChangeListener();
+
+        private class EditableChangeListener implements CompoundButton.OnCheckedChangeListener{
+
+            private final static String TAG = "EditableChangeListener";
+
+            @Override
+            public void onCheckedChanged (CompoundButton buttonView, boolean isChecked){
+                final int id = buttonView.getId();
+                final MyPermissionInfo perm = (MyPermissionInfo) buttonView.getTag(); 
+                Log.i(TAG, "pff onCheckedChanged got Tag: perm.name="+perm.name+" PackageName="+perm.packageName);
+                switch (id) {
+                case R.id.spoof_button:
+                	boolean on = ((android.widget.Switch) buttonView).isChecked();
+                	if (on)
+                		spoofPerm(perm);
+                	else
+                		unspoofPerm(perm);
+                    break;
+                case R.id.revoke_button:
+                	on = ((android.widget.Switch) buttonView).isChecked();
+                	if (on)
+                		revokePerm(perm);
+                	else
+                		grantPerm(perm);
+                    break;                	
+                }       	
+            }
+                    
+            private void spoofPerm(final MyPermissionInfo perm) {
+                PackageManager pm = getContext().getPackageManager();
+                Log.i(TAG, "spoofPerm: perm.name="+perm.name+" PackageName="+perm.packageName);
+                if (!mSpoofedPerms.contains(perm.name)) {
+                	pm.setSpoofedPermissions(perm.packageName,
+                            addPermToList(mSpoofedPerms, perm));
+                }
+            }
+
+            private void unspoofPerm(final MyPermissionInfo perm) {
+                PackageManager pm = getContext().getPackageManager();
+                Log.i(TAG, "unspoofPerm: perm.name="+perm.name+" PackageName="+perm.packageName);
+                if (mSpoofedPerms.contains(perm.name)) {
+                    pm.setSpoofedPermissions(perm.packageName,
+                            removePermFromList(mSpoofedPerms, perm));
+                }
+            }
+            
+            private void revokePerm(final MyPermissionInfo perm) {
+                PackageManager pm = getContext().getPackageManager();
+                Log.i(TAG, "revokePerm: perm.name="+perm.name+" PackageName="+perm.packageName);
+                if (!mRevokedPerms.contains(perm.name)) {
+                	pm.setRevokedPermissions(perm.packageName,
+                            addPermToList(mRevokedPerms, perm));
+                }
+            }
+
+            private void grantPerm(final MyPermissionInfo perm) {
+                PackageManager pm = getContext().getPackageManager();
+                Log.i(TAG, "grantPerm: perm.name="+perm.name+" PackageName="+perm.packageName);
+                if (mRevokedPerms.contains(perm.name)) {
+                    pm.setRevokedPermissions(perm.packageName,
+                            removePermFromList(mRevokedPerms, perm));
+                }
+            }
+
+            private String[] addPermToList(final HashSet<String> set, final MyPermissionInfo perm) {
+                set.add(perm.name);
+                final String[] rp = new String[set.size()];
+                set.toArray(rp);
+                return rp;
+            }
+
+            private String[] removePermFromList(final HashSet<String> set, final MyPermissionInfo perm) {
+                set.remove(perm.name);
+                final String[] rp = new String[set.size()];
+                set.toArray(rp);
+                return rp;
+            }
+            
+        }
+              
         public PermissionItemView(Context context, AttributeSet attrs) {
             super(context, attrs);
             setClickable(true);
+
+            mSpoofablePerms = new HashSet<String>();
+            mPm = getContext().getPackageManager();
+        	String[] spoofable = mPm.getSpoofablePermissions();
+        	mSpoofablePerms.addAll(Arrays.asList(spoofable));
+
+        	mRevokeablePerms = new HashSet<String>();
+            mPm = getContext().getPackageManager();
+        	String[] revokeable = mPm.getRevokeablePermissions();
+        	mRevokeablePerms.addAll(Arrays.asList(revokeable));
+        	
         }
 
+                
         public void setPermission(MyPermissionGroupInfo grp, MyPermissionInfo perm,
                 boolean first, CharSequence newPermPrefix) {
             mGroup = grp;
             mPerm = perm;
 
+            mSpoofedPerms = new HashSet<String>();
+        	String[] spoofed = mPm.getSpoofedPermissions(perm.packageName);
+            mSpoofedPerms.addAll(Arrays.asList(spoofed));
+            mRevokedPerms = new HashSet<String>();
+        	String[] revoked = mPm.getRevokedPermissions(perm.packageName);
+            mRevokedPerms.addAll(Arrays.asList(revoked));
+            
+            Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+            		perm.name + " packageName="+perm.packageName);
+
             ImageView permGrpIcon = (ImageView) findViewById(R.id.perm_icon);
             TextView permNameView = (TextView) findViewById(R.id.perm_name);
+            Switch spoofSwitch = (Switch) findViewById(R.id.spoof_button);
+            if (null != spoofSwitch){
+	            spoofSwitch.setText("Spoof");
+	            spoofSwitch.setTag(perm);
+	            spoofSwitch.setOnCheckedChangeListener(mEditableChangeListener);
+	            if (mSpoofablePerms.contains(perm.name)) {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " spoofable");            	
+	            } else {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " not spoofable");            	            	
+	            }
+	            spoofSwitch.setVisibility(mSpoofablePerms.contains(perm.name) ? View.VISIBLE : View.GONE);
+	            if (mSpoofedPerms.contains(perm.name)) {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " spoofed");            	
+	                spoofSwitch.setChecked(true);
+	            } else {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " not spoofed");            	            	
+	                spoofSwitch.setChecked(false);
+	            }
+            }
 
-            PackageManager pm = getContext().getPackageManager();
+            Switch revokeSwitch = (Switch) findViewById(R.id.revoke_button);
+            if (null != revokeSwitch){
+            	revokeSwitch.setText("Revoke");
+            	revokeSwitch.setTag(perm);
+            	revokeSwitch.setOnCheckedChangeListener(mEditableChangeListener);
+	            if (mRevokeablePerms.contains(perm.name)) {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " revokeable");            	
+	            } else {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " not revokeable");            	            	
+	            }
+	            revokeSwitch.setVisibility(mRevokeablePerms.contains(perm.name) ? View.VISIBLE : View.GONE);
+	            if (mRevokedPerms.contains(perm.name)) {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " revoked");            	
+	                revokeSwitch.setChecked(true);
+	            } else {
+	                Log.i(TAG, "pff: PermissionItemView.setPermission perm.name=" + 
+	                		perm.name + " not revoked");            	            	
+	                revokeSwitch.setChecked(false);
+	            }
+            }
+            
             Drawable icon = null;
             if (first) {
-                icon = grp.loadGroupIcon(pm);
+                icon = grp.loadGroupIcon(mPm);
             }
             CharSequence label = perm.mLabel;
             if (perm.mNew && newPermPrefix != null) {
@@ -234,21 +397,30 @@ public class AppSecurityPermissions {
     }
 
     public AppSecurityPermissions(Context context, List<PermissionInfo> permList) {
+    	Log.i(TAG, "AppSecurityPermissions(Context context, List<PermissionInfo> permList)");
         mContext = context;
         mPm = mContext.getPackageManager();
-        loadResources();
+
+        loadResources();        
         mPermComparator = new PermissionInfoComparator();
         mPermGroupComparator = new PermissionGroupInfoComparator();
         for (PermissionInfo pi : permList) {
-            mPermsList.add(new MyPermissionInfo(pi));
+        	Log.i(TAG, "pff: permList pi.name=" + pi.name);
+        	MyPermissionInfo myPerm = new MyPermissionInfo(pi);
+            mPermsList.add(myPerm);
         }
         setPermissions(mPermsList);
+
     }
     
     public AppSecurityPermissions(Context context, String packageName) {
+    	Log.i(TAG, "AppSecurityPermissions(Context context, String packageName) packageName="+packageName);
         mContext = context;
         mPm = mContext.getPackageManager();
-        loadResources();
+
+    	Log.i(TAG, "AppSecurityPermissions(Context context, String packageName) - loading spoofed");
+
+    	loadResources();
         mPermComparator = new PermissionInfoComparator();
         mPermGroupComparator = new PermissionGroupInfoComparator();
         mPermsList = new ArrayList<MyPermissionInfo>();
@@ -265,14 +437,19 @@ public class AppSecurityPermissions {
             getAllUsedPermissions(pkgInfo.applicationInfo.uid, permSet);
         }
         for(MyPermissionInfo tmpInfo : permSet) {
-            mPermsList.add(tmpInfo);
+        	MyPermissionInfo myPerm = new MyPermissionInfo(tmpInfo);
+        	Log.i(TAG, "AppSecurityPermissions(Context context, String packageName) - myPerm.name="+myPerm.name+", setting myPerm.packageName="+packageName);
+        	myPerm.packageName = packageName;
+            mPermsList.add(myPerm);
         }
         setPermissions(mPermsList);
     }
 
     public AppSecurityPermissions(Context context, PackageInfo info) {
+    	Log.i(TAG, "AppSecurityPermissions(Context context, PackageInfo info)");    	
         mContext = context;
         mPm = mContext.getPackageManager();
+        
         loadResources();
         mPermComparator = new PermissionInfoComparator();
         mPermGroupComparator = new PermissionGroupInfoComparator();
@@ -305,9 +482,11 @@ public class AppSecurityPermissions {
         }
         // Retrieve list of permissions
         for (MyPermissionInfo tmpInfo : permSet) {
-            mPermsList.add(tmpInfo);
+        	MyPermissionInfo myPerm = new MyPermissionInfo(tmpInfo);
+            mPermsList.add(myPerm);
         }
         setPermissions(mPermsList);
+
     }
 
     private void loadResources() {

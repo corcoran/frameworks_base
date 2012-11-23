@@ -16,12 +16,16 @@
 
 package com.android.server;
 
+import android.app.ActivityManager;
+import android.app.ActivityManager.RunningAppProcessInfo;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pff.LocationBean;
+import android.content.pff.PFFInfoDatabase;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -89,6 +93,7 @@ import java.util.Set;
 public class LocationManagerService extends ILocationManager.Stub implements Runnable {
     private static final String TAG = "LocationManagerService";
     public static final boolean D = false;
+    public static final boolean PFF_D = true;
 
     private static final String WAKELOCK_KEY = TAG;
     private static final String THREAD_NAME = TAG;
@@ -181,6 +186,8 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
 
     // current active user on the device - other users are denied location data
     private int mCurrentUserId = UserHandle.USER_OWNER;
+    
+    private PFFInfoDatabase mPFFInfoDatabase;
 
     public LocationManagerService(Context context) {
         super();
@@ -208,6 +215,7 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
     private void init() {
         if (D) Log.d(TAG, "init()");
 
+        mPFFInfoDatabase = new PFFInfoDatabase(mContext);
         PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_KEY);
         mPackageManager = mContext.getPackageManager();
@@ -1305,7 +1313,7 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
                         packageName);
                 return null;
             }
-
+            
             synchronized (mLock) {
                 // Figure out the provider. Either its explicitly request (deprecated API's),
                 // or use the fused provider
@@ -1317,9 +1325,13 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
                 if (!isAllowedBySettingsLocked(name, mCurrentUserId)) return null;
 
                 Location location = mLastLocation.get(name);
+            	if (PFF_D) Log.d(TAG, "pff: getLastLocation: " + location);
+                
                 if (location == null) {
                     return null;
                 }
+                
+                location = pffSpoofLocation(location,Binder.getCallingPid(),Binder.getCallingUid());
                 if (allowedResolutionLevel < RESOLUTION_LEVEL_FINE) {
                     Location noGPSLocation = location.getExtraLocation(Location.EXTRA_NO_GPS_LOCATION);
                     if (noGPSLocation != null) {
@@ -1537,8 +1549,8 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
             Log.w(TAG, "Dropping incomplete location: " + location);
             return;
         }
-
         mLocationHandler.removeMessages(MSG_LOCATION_CHANGED, location);
+
         Message m = Message.obtain(mLocationHandler, MSG_LOCATION_CHANGED, location);
         m.arg1 = (passive ? 1 : 0);
         mLocationHandler.sendMessageAtFrontOfQueue(m);
@@ -1580,13 +1592,71 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
         return true;
     }
 
+    private String pffGetAppNameByPid(Context context, int pid){
+        ActivityManager manager 
+                   = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+
+        for(RunningAppProcessInfo processInfo : manager.getRunningAppProcesses()){
+            if(processInfo.pid == pid){
+                return processInfo.processName;
+            }
+        }
+        return "";
+    }    
+    
+    private Location pffSpoofLocation(Location location, int pid, int uid){
+    	
+    	String packageName = "";
+    	if (PFF_D){
+    		packageName = pffGetAppNameByPid(mContext, pid);
+    	}
+        int res_f = mContext.pffEnforceCallingPermission(android.Manifest.permission.ACCESS_FINE_LOCATION, 
+        		"Requires ACCESS_FINE_LOCATION", pid, uid);
+    	if (PFF_D) {Log.d(TAG, "pff spoofLocation: pffEnforceCallingPermission ACCESS_FINE_LOCATION pid="+pid+" uid="+uid+" packageName="+packageName+" res="+res_f);}
+        int res_c = mContext.pffEnforceCallingPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION, 
+        		"Requires ACCESS_COARSE_LOCATION", pid, uid);
+        if (PFF_D) {Log.d(TAG, "pff spoofLocation: pffEnforceCallingPermission ACCESS_COARSE_LOCATION pid="+pid+" uid="+uid+" packageName="+packageName+" res="+res_c);}
+    	if (location!=null){
+    		LocationBean locationBean = mPFFInfoDatabase.findLocationByDescription("gps");
+    		if (locationBean == null) {
+    	        if (PFF_D) {Log.d(TAG, "pff spoofLocation: pffEnforceCallingPermission locationBean==null adding default");}
+    			locationBean = mPFFInfoDatabase.addDefaultLocation();
+    		}  			
+	        if (PFF_D) {Log.d(TAG, "pff spoofLocation: pffEnforceCallingPermission locationBean lat="+locationBean.getLatitude()
+	        		                                                                           +",lon="+locationBean.getLongitude()
+	        		                                                                           +",alt="+locationBean.getAltitude());}        		                                                                           
+    		if (res_f==PackageManager.PERMISSION_SPOOFED){
+            	if (PFF_D) {Log.d(TAG, "pff spoofLocation: FINE spoofed");}
+    	    	location.setLatitude(locationBean.getLatitude());
+    	    	location.setLongitude(locationBean.getLongitude());
+    	    	// leave the altidute as it is provided by GPS
+    	    	// location.setAltitude(locationBean.getAltitude());			
+    		}
+          	Location noGPSLocation = location.getExtraLocation(Location.EXTRA_NO_GPS_LOCATION);
+	    	if (noGPSLocation!=null) {
+	    		if (res_c==PackageManager.PERMISSION_SPOOFED || 
+	    				(res_c!=PackageManager.PERMISSION_GRANTED && res_f==PackageManager.PERMISSION_SPOOFED) ){
+	            	if (PFF_D) {Log.d(TAG, "pff spoofLocation: COARSE spoofed");}
+			    	noGPSLocation.setLatitude(locationBean.getLatitude());
+			    	noGPSLocation.setLongitude(locationBean.getLongitude());
+	    	    	// leave the altidute as it is provided by noGPS
+			    	// noGPSLocation.setAltitude(locationBean.getAltitude());
+			    	location.setExtraLocation(Location.EXTRA_NO_GPS_LOCATION, noGPSLocation);
+	            }
+	    	}
+	        
+    	}
+    	return location;
+    }
+    
     private void handleLocationChangedLocked(Location location, boolean passive) {
-        if (D) Log.d(TAG, "incoming location: " + location);
+
+    	if (D || PFF_D) Log.d(TAG, "pff incoming location: " + location);
 
         long now = SystemClock.elapsedRealtime();
         String provider = (passive ? LocationManager.PASSIVE_PROVIDER : location.getProvider());
 
-        // Skip if the provider is unknown.
+        // Skip if thse provider is unknown.
         LocationProviderInterface p = mProvidersByName.get(provider);
         if (p == null) return;
 
@@ -1654,6 +1724,7 @@ public class LocationManagerService extends ILocationManager.Stub implements Run
             } else {
                 notifyLocation = lastLocation;  // use fine location
             }
+            notifyLocation = pffSpoofLocation(notifyLocation, receiver.mPid, receiver.mUid);
             if (notifyLocation != null) {
                 Location lastLoc = r.mLastFixBroadcast;
                 if ((lastLoc == null) || shouldBroadcastSafe(notifyLocation, lastLoc, r, now)) {
