@@ -255,6 +255,11 @@ public class KeyguardViewManager {
                     break;
             }
         }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+            if (mKeyguardView.handleTrackpadKey()) {
+                return true;
+            }
+        }
         return false;
     }
 
