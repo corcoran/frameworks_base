@@ -233,6 +233,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private static final int KEY_ACTION_CUSTOM_APP = 13;
     private static final int KEY_ACTION_WIDGETS = 14;
     private static final int KEY_ACTION_QS = 15;
+    private static final int KEY_ACTION_CAMERA = 16;
 
     // Masks for checking presence of hardware keys.
     // Must match values in core/res/res/values/config.xml
@@ -513,10 +514,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     boolean mSearchKeyShortcutPending;
     boolean mConsumeSearchKeyUp;
     boolean mAssistKeyLongPressed;
+    boolean mCameraLongPressed;
 
     // Used when key is pressed and performing non-default action
     boolean mMenuDoCustomAction;
     boolean mBackDoCustomAction;
+    boolean mCameraDoCustomAction;
 
     // Tracks user-customisable behavior for certain key events
     private String mPressOnHomeBehavior;
@@ -529,6 +532,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private String mLongPressOnAssistBehavior;
     private String mPressOnAppSwitchBehavior;
     private String mLongPressOnAppSwitchBehavior;
+    private String mPressOnCameraBehavior;
+    private String mLongPressOnCameraBehavior;
 
     // To identify simulated keypresses, so we can perform
     // the default action for that key
@@ -708,6 +713,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     Settings.System.KEY_APP_SWITCH_ACTION), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.KEY_APP_SWITCH_LONG_PRESS_ACTION), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.KEY_CAMERA_ACTION), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.KEY_CAMERA_LONG_PRESS_ACTION), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.HARDWARE_KEY_REBINDING), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
@@ -1107,6 +1116,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     Settings.System.putInt(
                             mContext.getContentResolver(),
                             Settings.System.EXPANDED_DESKTOP_STATE, mExpandedState == 1 ? 0 : 1);
+                    break;
+                case KEY_ACTION_CAMERA:
+                    triggerVirtualKeypress(KeyEvent.KEYCODE_CAMERA);
                     break;
                 default:
                     break;
@@ -1527,6 +1539,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     mPressOnAppSwitchBehavior = getStr(KEY_ACTION_APP_SWITCH);
                     mLongPressOnAppSwitchBehavior = getStr(KEY_ACTION_NOTHING);
                 }
+                // We know camera exists.  This should be an overlay, though.
+                mPressOnCameraBehavior = getStr(KEY_ACTION_CAMERA);
+                mLongPressOnCameraBehavior = getStr(KEY_ACTION_NOTHING);
             } else {
                 if (mHasHomeKey) {
                     mPressOnHomeBehavior = getDefString(resolver,
@@ -1568,6 +1583,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     mLongPressOnAppSwitchBehavior = getDefString(resolver,
                             Settings.System.KEY_APP_SWITCH_LONG_PRESS_ACTION, KEY_ACTION_NOTHING);
                 }
+                mPressOnCameraBehavior = getDefString(resolver,
+                            Settings.System.KEY_CAMERA_ACTION, KEY_ACTION_CAMERA);
+                mLongPressOnCameraBehavior = getDefString(resolver,
+                            Settings.System.KEY_CAMERA_LONG_PRESS_ACTION, KEY_ACTION_NOTHING);
             }
 
             final int showByDefault = mContext.getResources().getBoolean(
@@ -2658,6 +2677,53 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
             }
             return -1;
+        } else if (keyCode == KeyEvent.KEYCODE_CAMERA) {
+            if (down) {
+                if (!mRecentAppsPreloaded && (mPressOnCameraBehavior.equals(getStr(KEY_ACTION_APP_SWITCH)) ||
+                        mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_APP_SWITCH)))) {
+                    preloadRecentApps();
+                }
+                if (repeatCount == 0) {
+                    mCameraLongPressed = false;
+                    if (!mPressOnCameraBehavior.equals(getStr(KEY_ACTION_CAMERA)) &&
+                            !mIsVirtualKeypress && event.getDeviceId() != KeyCharacterMap.VIRTUAL_KEYBOARD) {
+                        mCameraDoCustomAction = true;
+                        return -1;
+                    }
+                } else if (longPress) {
+                    if (mRecentAppsPreloaded &&
+                            !mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_APP_SWITCH))) {
+                        cancelPreloadRecentApps();
+                    }
+                    if (!keyguardOn && !mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_NOTHING))) {
+                        performHapticFeedbackLw(null, HapticFeedbackConstants.LONG_PRESS, false);
+                        performKeyAction(mLongPressOnCameraBehavior);
+                        mCameraLongPressed = true;
+                    }
+                }
+                if (mCameraLongPressed) {
+                    return -1;
+                }
+            } else {
+                if (mRecentAppsPreloaded && !mPressOnCameraBehavior.equals(getStr(KEY_ACTION_APP_SWITCH)) &&
+                        !mLongPressOnBackBehavior.equals(getStr(KEY_ACTION_APP_SWITCH))) {
+                    cancelPreloadRecentApps();
+                }
+                if (mCameraLongPressed) {
+                    mCameraLongPressed = false;
+                    return -1;
+                } else {
+                    if (mCameraDoCustomAction) {
+                        mCameraDoCustomAction = false;
+                        if (!canceled && !keyguardOn) {
+                            performKeyAction(mPressOnCameraBehavior);
+                            return -1;
+                        }
+                    }
+                    if (canceled)
+                        return -1;
+                }
+            }
         } else if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (down) {
                 if (!mRecentAppsPreloaded && (mPressOnBackBehavior.equals(getStr(KEY_ACTION_APP_SWITCH)) ||
