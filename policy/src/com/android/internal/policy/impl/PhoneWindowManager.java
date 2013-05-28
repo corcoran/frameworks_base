@@ -1118,7 +1118,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             Settings.System.EXPANDED_DESKTOP_STATE, mExpandedState == 1 ? 0 : 1);
                     break;
                 case KEY_ACTION_CAMERA:
-                    triggerVirtualKeypress(KeyEvent.KEYCODE_CAMERA);
+                    launchCameraAction();
                     break;
                 default:
                     break;
@@ -3008,6 +3008,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 Slog.w(TAG, "No activity to handle assist action.", e);
             }
         }
+    }
+
+    private void launchCameraAction() {
+        sendCloseSystemWindows();
+        Intent intent = new Intent(Intent.ACTION_CAMERA_BUTTON, null);
+        mContext.sendOrderedBroadcastAsUser(intent, UserHandle.CURRENT_OR_SELF,
+                null, null, null, 0, null, null);
     }
 
     private void toggleLastApp() {
