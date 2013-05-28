@@ -1763,6 +1763,13 @@ public final class Settings {
         public static final String TOUCHKEY_LIGHT_DUR = "touchkey_light_dir";
 
         /**
+         * Force Hardware Keyboard Backlight
+         *
+         * @hide
+         */
+        public static final String FORCE_KEYBOARD_LIGHT = "force_keyboard_light";
+
+        /**
          * Whether to enable the electron beam animation when turning screen on
          *
          * @hide */

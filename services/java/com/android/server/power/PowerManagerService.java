@@ -956,6 +956,19 @@ public final class PowerManagerService extends IPowerManager.Stub
                     // If hiding keyboard, turn off leds
                     setKeyboardLight(false, 1);
                     setKeyboardLight(false, 2);
+                } else {
+                    int mTouchKeyTimeout = (Settings.System.getInt(mContext.getContentResolver(),
+                            Settings.System.TOUCHKEY_LIGHT_DUR, BUTTON_ON_DURATION));
+
+                    boolean mForceKeyboardLight = (Settings.System.getInt(mContext.getContentResolver(),
+                            Settings.System.FORCE_KEYBOARD_LIGHT, 1) == 1);
+
+                    if (mTouchKeyTimeout != 6) {
+                        mButtonsLight.setBrightness(mDisplayPowerRequest.screenBrightness);
+                        mKeyboardLight.setBrightness(mDisplayPowerRequest.screenBrightness);
+                    } else if (mForceKeyboardLight) {
+                        mKeyboardLight.setBrightness(mDisplayPowerRequest.screenBrightness);
+                    }
                 }
             }
         }
@@ -1393,6 +1406,9 @@ public final class PowerManagerService extends IPowerManager.Stub
         int mTouchKeyTimeout = (Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.TOUCHKEY_LIGHT_DUR, BUTTON_ON_DURATION));
 
+        boolean mForceKeyboardLight = (Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.FORCE_KEYBOARD_LIGHT, 1) == 1);
+
         // Update the status of the user activity timeout timer.
         if ((dirty & (DIRTY_USER_ACTIVITY | DIRTY_WAKEFULNESS | DIRTY_SETTINGS)) != 0) {
             mHandler.removeMessages(MSG_USER_ACTIVITY_TIMEOUT);
@@ -1409,13 +1425,16 @@ public final class PowerManagerService extends IPowerManager.Stub
                     if (now < nextTimeout) {
                         if (mTouchKeyTimeout == 5) {
                             mButtonsLight.setBrightness(mDisplayPowerRequest.screenBrightness);
+                            mKeyboardLight.setBrightness(mKeyboardVisible ? mDisplayPowerRequest.screenBrightness : 0);
                         } else if (mTouchKeyTimeout == 6) {
                             mButtonsLight.setBrightness(0);
-                            mKeyboardLight.setBrightness(0);
+                            if (!mForceKeyboardLight)
+                                mKeyboardLight.setBrightness(0);
                         } else {
                             if (now > mLastUserActivityTime + mTouchKeyTimeout) {
                                 mButtonsLight.setBrightness(0);
-                                mKeyboardLight.setBrightness(0);
+                                if (!mForceKeyboardLight)
+                                    mKeyboardLight.setBrightness(0);
                             } else {
                                 int brightness = mButtonBrightnessOverrideFromWindowManager >= 0
                                         ? mButtonBrightnessOverrideFromWindowManager
