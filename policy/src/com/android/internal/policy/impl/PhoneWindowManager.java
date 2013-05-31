@@ -1013,6 +1013,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
                 mIsVirtualKeypress = true;
                 im.injectInputEvent(downEvent, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT);
+                if (keyCode == KeyEvent.KEYCODE_CAMERA) {
+                    KeyEvent repeatEvent = KeyEvent.changeTimeRepeat(downEvent,
+                            SystemClock.uptimeMillis(), 1, downEvent.getFlags() | KeyEvent.FLAG_LONG_PRESS);
+                    im.injectInputEvent(repeatEvent, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT);
+                }
                 im.injectInputEvent(upEvent, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT);
                 mIsVirtualKeypress = false;
             }
@@ -1118,7 +1123,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             Settings.System.EXPANDED_DESKTOP_STATE, mExpandedState == 1 ? 0 : 1);
                     break;
                 case KEY_ACTION_CAMERA:
-                    launchCameraAction();
+                    triggerVirtualKeypress(KeyEvent.KEYCODE_CAMERA);
                     break;
                 default:
                     break;
@@ -2685,8 +2690,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
                 if (repeatCount == 0) {
                     mCameraLongPressed = false;
-                    if (!mPressOnCameraBehavior.equals(getStr(KEY_ACTION_CAMERA)) &&
-                            !mIsVirtualKeypress && event.getDeviceId() != KeyCharacterMap.VIRTUAL_KEYBOARD) {
+                    if (!mIsVirtualKeypress && event.getDeviceId() != KeyCharacterMap.VIRTUAL_KEYBOARD) {
                         mCameraDoCustomAction = true;
                         return -1;
                     }
@@ -2695,11 +2699,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             !mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_APP_SWITCH))) {
                         cancelPreloadRecentApps();
                     }
-                    if (!keyguardOn && !mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_NOTHING))) {
+                    if (!keyguardOn && !mLongPressOnCameraBehavior.equals(getStr(KEY_ACTION_NOTHING))
+                            && !mIsVirtualKeypress && event.getDeviceId() != KeyCharacterMap.VIRTUAL_KEYBOARD) {
                         performHapticFeedbackLw(null, HapticFeedbackConstants.LONG_PRESS, false);
                         performKeyAction(mLongPressOnCameraBehavior);
                         mCameraLongPressed = true;
                     }
+                    mCameraDoCustomAction = false;
                 }
                 if (mCameraLongPressed) {
                     return -1;
