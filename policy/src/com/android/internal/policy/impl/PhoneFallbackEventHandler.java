@@ -225,12 +225,7 @@ public class PhoneFallbackEventHandler implements FallbackEventHandler {
                     break;
                 }
                 if (event.isTracking() && !event.isCanceled()) {
-                    mView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                    sendCloseSystemWindows();
-                    Intent intent = new Intent(Intent.ACTION_CAMERA_BUTTON, null);
-                    intent.putExtra(Intent.EXTRA_KEY_EVENT, event);
-                    mContext.sendOrderedBroadcastAsUser(intent, UserHandle.CURRENT_OR_SELF,
-                            null, null, null, 0, null, null);
+                    // Add short press behavior here if desired
                 }
                 return true;
             }
