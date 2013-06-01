@@ -297,17 +297,22 @@ public class KeyguardViewStateManager implements
         }
     };
 
-    public void showUsabilityHints() {
+    public void showUsabilityHints(boolean disabledhints) {
         mMainQueue.postDelayed( new Runnable() {
             @Override
             public void run() {
                 mKeyguardSecurityContainer.showUsabilityHint();
             }
         } , SCREEN_ON_RING_HINT_DELAY);
-        mKeyguardWidgetPager.showInitialPageHints();
+        if (!disabledhints)
+            mKeyguardWidgetPager.showInitialPageHints();
         if (mHideHintsRunnable != null) {
             mMainQueue.postDelayed(mHideHintsRunnable, SCREEN_ON_HINT_DURATION);
         }
+    }
+
+    public void showUsabilityHints() {
+        showUsabilityHints(false);
     }
 
     public void setTransportState(int state) {

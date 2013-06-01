@@ -33,6 +33,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.UserInfo;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -298,7 +299,9 @@ public class KeyguardHostView extends KeyguardViewBase {
         mSwitchPageRunnable.run();
 
         // This needs to be called after the pages are all added.
-        mViewStateManager.showUsabilityHints();
+        boolean disabledhints = (Settings.System.getInt(mContext.getContentResolver(),
+                        Settings.System.LOCKSCREEN_DISABLE_HINTS, 0) == 1);
+        mViewStateManager.showUsabilityHints(disabledhints);
 
         showPrimarySecurityScreen(false);
         updateSecurityViews();
@@ -624,7 +627,10 @@ public class KeyguardHostView extends KeyguardViewBase {
                 || mCurrentSecuritySelection == SecurityMode.Account
                 || mCurrentSecuritySelection == SecurityMode.Invalid;
 
-        if (lockBeforeUnlock && !isSimOrAccount) {
+        boolean hardwareKeyboard = getResources().getConfiguration().keyboard != Configuration.KEYBOARD_NOKEYS;
+        boolean hardKeyboardHidden = getResources().getConfiguration().hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_YES;
+
+        if (lockBeforeUnlock && !isSimOrAccount && (!hardwareKeyboard || hardwareKeyboard && hardKeyboardHidden)) {
             showSecurityScreen(SecurityMode.None);
         } else {
             SecurityMode securityMode = mSecurityModel.getSecurityMode();
@@ -916,6 +922,25 @@ public class KeyguardHostView extends KeyguardViewBase {
     @Override
     public void onScreenTurnedOn() {
         if (DEBUG) Log.d(TAG, "screen on, instance " + Integer.toHexString(hashCode()));
+
+        boolean hardwareKeyboard = getResources().getConfiguration().keyboard != Configuration.KEYBOARD_NOKEYS;
+        boolean hardKeyboardHidden = getResources().getConfiguration().hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_YES;
+
+        if (hardwareKeyboard && !hardKeyboardHidden && SecurityMode.None == mCurrentSecuritySelection) {
+            boolean deferKeyguardDone = false;
+            if (mDismissAction != null) {
+                deferKeyguardDone = mDismissAction.onDismiss();
+                mDismissAction = null;
+            }
+            if (mViewMediatorCallback != null) {
+                if (deferKeyguardDone) {
+                    mViewMediatorCallback.keyguardDonePending();
+                } else {
+                    mViewMediatorCallback.keyguardDone(true);
+                }
+            }
+            return;
+        }
         showPrimarySecurityScreen(false);
         getSecurityView(mCurrentSecuritySelection).onResume(KeyguardSecurityView.SCREEN_ON);
 
@@ -925,7 +950,9 @@ public class KeyguardHostView extends KeyguardViewBase {
         requestLayout();
 
         if (mViewStateManager != null) {
-            mViewStateManager.showUsabilityHints();
+            boolean disabledhints = (Settings.System.getInt(mContext.getContentResolver(),
+                        Settings.System.LOCKSCREEN_DISABLE_HINTS, 0) == 1);
+            mViewStateManager.showUsabilityHints(disabledhints);
         }
 
         minimizeChallengeIfDesired();
